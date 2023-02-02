@@ -1,30 +1,122 @@
-import rsa
-import pickle
+import base64, rsa, os
 
-# def oneTimeInDenye(self):
-#     (pubkey, privkey) = rsa.newkeys(512)
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
-#     with open("private.pem", "wb") as f:
-#         f.write(pickle.dumps(privkey))
+def OnlyOneTime(str):
+    (public_key, private_key) = rsa.newkeys(2048)
+    private_key_pem = private_key.save_pkcs1()
+    with open('private_key_django.pem', 'wb') as f:
+        f.write(private_key_pem)
+    public_key_pem = public_key.save_pkcs1()
+    with open('public_key_django.pem', 'wb') as f:
+        f.write(public_key_pem)
 
-#     with open("public.pem", "wb") as f:
-#         f.write(pickle.dumps(pubkey))
+OnlyOneTime("yalla")
+
+def encryptRSA(message):
+    with open('public_key.pem', 'rb') as f:
+        public_key_pem = f.read()
+        public_key = rsa.PublicKey.load_pkcs1(public_key_pem)
+
+    # Encrypt the message using the public key
+    ciphertext = rsa.encrypt(message.encode(), public_key)
+
+    # Encode the ciphertext to base64
+    ciphertext_base64 = base64.b64encode(ciphertext)
+    
+    # Return the base64 encoded ciphertext as string
+    return ciphertext_base64.decode()
+    
+def decryptRSA(encrypted_message):
+    # Load private key from PEM file
+    with open('private_key.pem', 'rb') as f:
+        private_key_pem = f.read()
+        private_key = rsa.PrivateKey.load_pkcs1(private_key_pem)
+
+    message = base64.b64decode(encrypted_message)
+
+    enc = rsa.decrypt(message, private_key)
+
+    return str(enc)[2:-1]
 
 
-def encrypt_message(message):
-    with open("public.pem", "rb") as f:
-        public_key = pickle.loads(f.read())
-    return rsa.encrypt(message.encode(), public_key)
+def encryptAES(data, data_type='string'):
+    backend = default_backend()
+    key = os.urandom(32)
+    backend = default_backend()
+    cipher = Cipher(algorithms.AES(key), modes.GCM(b'\0' * 12), backend=backend)
+    encryptor = cipher.encryptor()
 
-def decrypt_message(encrypted_message):
-    with open("private.pem", "rb") as f:
-        private_key = pickle.loads(f.read())
-    return rsa.decrypt(encrypted_message, private_key).decode()
+    if data_type == 'string':
+        encrypted_data = encryptor.update(data.encode()) + encryptor.finalize()
+        tag = encryptor.tag
+        return encrypted_data, key, tag
+    elif data_type == 'file':
+        encrypted_data = data + '.encrypted'
+        with open(data, 'rb') as in_file:
+            with open(encrypted_data, 'wb') as out_file:
+                while True:
+                    chunk = in_file.read(4096)
+                    if len(chunk) == 0:
+                        break
+                    out_file.write(encryptor.update(chunk))
+                out_file.write(encryptor.finalize())
+        tag = encryptor.tag
+        return encrypted_data, key, tag
+    else:
+        raise ValueError('Invalid data_type argument. Must be "string" or "file".')
 
-message = "This is a test message"
-encrypted_message = encrypt_message(message)
-print(encrypted_message)
-print(decrypt_message(encrypted_message))
+def decryptAES(encrypted_data, key, tag, data_type='string'):
+    backend = default_backend()
+    cipher = Cipher(algorithms.AES(key), modes.GCM(b'\0' * 12, tag), backend=backend)
+    decryptor = cipher.decryptor()
+
+    if data_type == 'string':
+        decrypted_data = decryptor.update(encrypted_data) + decryptor.finalize()
+        return decrypted_data.decode()
+    elif data_type == 'file':
+        decrypted_file = encrypted_data.replace('.encrypted', '')
+        with open(encrypted_data, 'rb') as in_file:
+            with open(decrypted_file, 'wb') as out_file:
+                while True:
+                    chunk = in_file.read(4096)
+                    if len(chunk) == 0:
+                        break
+                    out_file.write(decryptor.update(chunk))
+                out_file.write(decryptor.finalize())
+        return decrypted_file
+    else:
+        raise ValueError('Invalid data_type argument. Must be "string" or "file".')
+
+
+# x="mohamed beirouk"
+
+# print(x)
+
+
+# print("encrypting .....")
+# print(encrypt_message(x))
+
+# print("decrypting .....")
+# print(decrypt_message(encrypt_message(x)))
+
+
+
+# message = "Mohamed Beirouk"
+# print("My original str : "+message)
+
+# enc = encrypt_message(message)
+
+# my_str = str(enc)
+# print("Encrypted message : "+my_str)
+
+
+# my_str_as_bytes = str.encode(my_str)
+# encr = decrypt_message(my_str_as_bytes)
+
+# print("decrypted str: "+encr)
+
 
 
 # def get_public_key(self):

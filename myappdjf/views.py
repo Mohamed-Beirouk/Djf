@@ -1,3 +1,4 @@
+import json
 from myappdjf.cryptoFunctions import  decrypt_message, encrypt_message
 from . models import *
 from django.contrib.auth.models import User
@@ -51,45 +52,34 @@ class Mytoken(TokenObtainPairView):
         # try:
         chercheur = C_emploi.objects.get(user=u)
         serializer = C_emploiSerializer(chercheur, many=False)
-
-
         Langues = LangueMaitrise.objects.filter(c_emploi=chercheur)
         langS = LangueMaitriseSerializer(Langues, many=True)
 
-
-        # with open('myappdjf'+serializer.data['image'], "rb") as image_file:
-        #     image_string =base64.b64encode(image_file.read()).decode() 
-
-       
-
-        # return Response(
-        #     {
-        #         "public":key.publickey().exportKey(),
-        #     },
-        #     status.HTTP_200_OK
-        # )
-
-        # message = """G\\x97\\xf7xcEyO\\xa1\\x13\\xcb\\xb5\\xa3%\\xd4c \\xc4\\xe4\\xe4\\x02i\\xfa\\xec\\\\\\xdaQ(\\x1aI\\xcf\\xae^\\x18\\x8c2\\xc5\\x84S#*\\xf1k\\xfd\\xe2X\\x89\\x06\\x93R\\x86^\\xaf{\\x90=\\x90\\xc9\\xdb\\xdf\"7pb"""
-        # arr = bytes(message, 'utf-8')
-        # enc = decrypt_message(arr)
-        
-
-        message = "Mohamed Beirouk"
-        enc = encrypt_message(message)
-        
-        return Response(
-            {
-                'token': str(refresh.access_token),
+        data = {
+                
+                'token':str(refresh.access_token),
                 'refresh_token': str(refresh),
-                'id':u.id,
-                'status': str(enc),
-                'message':'login success',
-                'informations':serializer.data,
+                'message': encrypt_message('login success'),
+                'user':serializer.data,
                 'langues':langS.data
-            },
+            }
+            
+        return Response(
+            data,
             status.HTTP_200_OK
         )
+    
+
+
         # except:
+        #         return Response(
+        #         {
+        #             'status': False,
+        #             'message': 'no human as aa develloper for this information',
+        #             'data': null
+        #         },
+        #         status.HTTP_401_UNAUTHORIZED
+        #     )
         #     try:
         #         entreprise = Entreprise.objects.get(user=u)
         #         if entreprise.type == "entreprise" and entreprise.status == "Accepted":
@@ -129,14 +119,14 @@ class Mytoken(TokenObtainPairView):
         #                 )
         #     except:
 
-        #         return Response(
-        #             {
-        #                 'status': False,
-        #                 'message': 'no human as a develloper for this information',
-        #                 'data': null
-        #             },
-        #             status.HTTP_401_UNAUTHORIZED
-        #         )
+                # return Response(
+                #     {
+                #         'status': False,
+                #         'message': 'no human as a develloper for this information',
+                #         'data': null
+                #     },
+                #     status.HTTP_401_UNAUTHORIZED
+                # )
 
 @api_view(['POST'])
 def updateProfile(request):
@@ -205,8 +195,10 @@ class Les_annonces_emploi(APIView):
         key = request.POST['motcle']
         localite = request.POST['pays']
         browser=webdriver.Chrome("chromedriver.exe")
+
         browser.get("https://www.linkedin.com/jobs/search?keywords="+key+"&location="+localite+"&position=1&pageNum=0")
         jobs_titres=browser.find_elements_by_class_name("base-search-card__title")
+
         tt=[] 
         iterator = islice(jobs_titres, 25)
         for i in iterator:

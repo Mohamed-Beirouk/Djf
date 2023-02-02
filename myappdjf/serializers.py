@@ -44,6 +44,10 @@ class LangueMaitriseSerializer(serializers.ModelSerializer):
 
 
 class C_emploiSerializer(serializers.ModelSerializer):
+    nom = serializers.ReadOnlyField(source='user.first_name')
+    prenom = serializers.ReadOnlyField(source='user.last_name')
+    email = serializers.ReadOnlyField(source='user.email')
+    username = serializers.ReadOnlyField(source='user.username')
     class Meta:
         model = C_emploi
-        fields = '__all__'
+        fields = ['nom', 'prenom', 'email', 'username', 'id', 'telephone', 'image', 'sexe', 'type', 'description', 'experience', 'adresse', 'skills']

@@ -7,10 +7,10 @@ class C_emploi(models.Model):
     image = models.ImageField(upload_to="")
     sexe = models.CharField(max_length=10)
     type = models.CharField(max_length=15)
-    description = models.TextField(max_length=400, default="", editable=False)
-    experience = models.CharField(max_length=100, default="", editable=False)
-    adresse = models.CharField(max_length=100, default="", editable=False)
-    skills = models.CharField(max_length=200, default="", editable=False)
+    description = models.TextField(max_length=400, default="")
+    experience = models.CharField(max_length=100, default="")
+    adresse = models.CharField(max_length=100, default="")
+    skills = models.CharField(max_length=200, default="")
 
     def __str__(self):
         return self.telephone
