@@ -1,8 +1,11 @@
-import json
-from myappdjf.cryptoFunctions import  decrypt_message, encrypt_message
+import json , os
+from Djf.settings import PublicKEYAES
+from myappdjf.cryptoFunctions import  *
 from . models import *
+from Djf.settings import SECRET_KEY
 from django.contrib.auth.models import User
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate
+from django.db.models import Q
 from datetime import date
 from itertools import islice
 from selenium import webdriver
@@ -16,10 +19,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import generics
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
+from django.db.models.functions import Random
+
 
 
 class Mytoken(TokenObtainPairView):
@@ -53,24 +56,44 @@ class Mytoken(TokenObtainPairView):
         chercheur = C_emploi.objects.get(user=u)
         serializer = C_emploiSerializer(chercheur, many=False)
         Langues = LangueMaitrise.objects.filter(c_emploi=chercheur)
-        langS = LangueMaitriseSerializer(Langues, many=True)
+        lang = ''
+        for i in Langues:
+            lang = lang +" "+ i.langue.nom
+        
+        lm = []
+        for i in Langues:
+            lm.append(i.langue.nom)
+        q_objects = Q()
+        for substring in lm:
+            q_objects |= Q(titre__icontains=substring)
+        recommended = Travail.objects.filter(q_objects)
+        try:
+            random_order = recommended.order_by(Random())[0:7]
+        except:
+            random_order = recommended.order_by(Random())
+        seri = TravailSerializer(random_order, many=True)
 
         data = {
-                
-                'token':str(refresh.access_token),
-                'refresh_token': str(refresh),
-                'message': encrypt_message('login success'),
-                'user':serializer.data,
-                'langues':langS.data
+                "token":str(refresh.access_token),
+                "refresh_token": str(refresh),
+                "user":serializer.data,
+                "lang":lang,
+                "recomended":seri.data
             }
-            
+
+
+        encrypted_data_usingAes=encryptAES(json.dumps(data),PublicKEYAES) 
+
         return Response(
-            data,
+            {
+                "token":str(refresh.access_token),
+                'fsf':data,
+                'data': encrypted_data_usingAes,
+                'key': PublicKEYAES
+            },
             status.HTTP_200_OK
-        )
-    
-
-
+        )   
+        
         # except:
         #         return Response(
         #         {
@@ -191,41 +214,52 @@ def updateProfile(request):
  
 
 class Les_annonces_emploi(APIView):
+
     def post(self, request):
-        key = request.POST['motcle']
-        localite = request.POST['pays']
+        key = request.data['motcle']
+        localite = request.data['pays']
+        print(key+" :: "+localite)
         browser=webdriver.Chrome("chromedriver.exe")
 
         browser.get("https://www.linkedin.com/jobs/search?keywords="+key+"&location="+localite+"&position=1&pageNum=0")
+        print(browser.current_url)
         jobs_titres=browser.find_elements_by_class_name("base-search-card__title")
 
         tt=[] 
-        iterator = islice(jobs_titres, 25)
+        iterator = islice(jobs_titres, 30)
         for i in iterator:
             tt.append(i.text)
         
         jobs_entreprises=browser.find_elements_by_class_name("base-search-card__subtitle")
         ne=[] 
-        iterator = islice(jobs_entreprises, 25)
+        iterator = islice(jobs_entreprises, 30)
         for i in iterator:
             ne.append(i.text)
         jobs_adresses=browser.find_elements_by_class_name("job-search-card__location")
         ja=[]
-        iterator = islice(jobs_adresses, 25)
+        iterator = islice(jobs_adresses, 30)
         for i in iterator:
             ja.append(i.text)
         jobs_date=browser.find_elements_by_tag_name("time")
         jd=[]  
-        iterator = islice(jobs_date, 25)
+        iterator = islice(jobs_date, 30)
         for i in iterator:
             jd.append(i.text)
             
         jobs_links = browser.find_elements_by_tag_name('a')
         jl= [elem.get_attribute('href') for elem in jobs_links]
-        iterator = islice(jl, 25)
+        iterator = islice(jl, 30)
         for elem in iterator:
             jl.append(elem)
-        jobss=[ne,tt,ja,jd,jl]
+
+
+        images = browser.find_elements_by_tag_name('img')
+        ji=[]
+        iterator = islice(images, 30)
+        for elem in iterator:
+            ji.append(elem.get_attribute('src'))
+
+        jobss=[ne,tt,ja,jd,jl,ji]
         listjobs=[]
         for item in range(0,len(jobss[3])):
             singlejob={
@@ -237,10 +271,24 @@ class Les_annonces_emploi(APIView):
                 "image":jobss[5][item]
             }
             listjobs.append(singlejob)
+        for item in listjobs:
+            epe = item['entreprise']
+            titre = item['titre']
+            adr= item['adresse']
+            dt = item['date']
+            img = item['image'] if len(str(item['image'])) > 1 else "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOEAAADhCAMAAAAJbSJIAAAAllBMVEUMZMX///8AYcQAWcFDf8nL3PIAWrzQ3vMAYcI0eclZjtAucslAgsz6/v3x9/sgbclOhM8AX8QAYsAAX70AV70AWMLm7vgAXb4sdsw5fsoRbsVmltK6z+iUt+AMZcGDrN3c6fNvnddiltWqwuPA0+r0+vyOrt+lweR9pduuyueUst9Lh81pldd1mtYdbcunxOXO4u7Z4fGRyVlRAAAEKUlEQVR4nO3ce1faMBzG8SblEpSCiUUuQrkMhsCc+v7f3Ko4KjW/yLY0WXOez9mf4Ml3vSW1NYoAAAAAAAAAAAAAAAAAAAAAAAAAAADgYiriIsqU72FURcapGnXHk5aMue+xVCCT6n56x960Z2OpMt8jsozz+Xve0Xqc+h6SXbKzYOeSfex7UBap+J591lThHI3awPxw5KGcVFUj0RayaRrI6UaUj8GTpfA9NivknApkvTC2YdwjC9lc+h6dBWpFB7JFCIXx1FDIRr6HZ0Fq2EkZewjgXNMnLhVH34a+x/fPeMdYOK3/gchvTIFsXf/ZKR+bC+u/DcW1cS/d1f84jFobU+H3ANYXadNU2PU9PAvkd0Ngz/forMgMhU/1P5Xm4h0ZmHQCOAzz68WEPNdsg9iE+ZH4QATeBTApPYqf9PvoKIh99E2qOxQ3jVvf47JHDT5fMl5GAQW+3tNvnF/4N3shwrhJc8Ljw/Q0Q13MJ4GcRc8IORjP99vZfpWlQe2gH3EZx7Gs/4IJAADqQ3DJX/+FM38vqHyKlA5Hhx+Pj49X43468P34CheEiz9Z+pTMlrvFaQ6YbNrblRpKf6vNbHRNKX2yT/kwSVd5XluzGGs//Ew9NfIGS/RYs3X2yUGzp7dpnMYu+zPql1mbp46f+XxeSCkVxrpt8+bmWJgJOTPeYP7m5QkWi4Wye0d94t3m3sNmtFao5OyLvle7zPnRaKlQCb6+IDBfXvddJ1oq5BH5WE7JXd/xwWilUKnJpYGM9a7dPk5mpfCWP18cmO+okdOtaKVwYHxm5ZP1wOWNPBuFneUfBTK2dHkzyEbhwfirco3NxOF+aqPw8rPMbzuHV34bhX+h4e6q6KnQ4ZM6ngrZyNlG9FXo7hfMvgp7zt7o8FXIDq52U2+FznbTKgovmgAsalq4mB0mQqjJYfvler98o6sWhevuYPh2C5jz4WD1ReMPR4soi4W91dmtXy7MK469o7mpvcLn8nRaSWPi9PzH/++FCXvW3LuXpoXxi6MllK1tqHtGLBMd0zccLYNtFR60W8T0wkqv7yTQVuGTfpfLuvRXkms3sxo7hQlx/yy7NayOO3Uq3MXExY148PFY6OZyYafwihqsXNJfGteoMCGXQoYfzxo1KmxSO2kkJvTLcXUq3BreraFnp3UqNLwT3aJPpnUqPNBjTV+CKDScFVv0t+pUaLiytegXq1BoCQoLKNRDYfVQWEChHgqrh8ICCvVQWD0UFlCoh8LqobCAQj0UVg+FBRTqobB6KCygUA+F1UNhAYV6KKweCgso1ENh9VBYQKEeCquHwkKAhe1SIf2UoaFwSP+/dB29FtTvUsbnH+Q3VxTDmxOq+zffskqJiOtFpZda+OV/M6uQKepLof0NWAAAAAAAAAAAAAAAAAAAAAAAAAAAgAr8Aj5RWY0PDbn2AAAAAElFTkSuQmCC"
+            lnk = item['link']
+            Travail.objects.create(entreprise=epe, titre=titre, adresse=adr, date=dt, image=img, link=lnk)
+        
         time.sleep(5)
         browser.close() 
         x=0
         y=1
+        return Response(
+            listjobs,
+            status=status.HTTP_200_OK
+        )
+    
     def get(self, request): 
         data= request.headers['Authorization']
         token=str.replace(str(data),'JWT ', '')
@@ -252,7 +300,7 @@ class Les_annonces_emploi(APIView):
                 status=status.HTTP_200_OK
             )
         try:
-            payload=jwt.decode(token, 'L4l_o-zEhDwXy0DVf-tcFx2LoQTIxMUfib-z_71uhMg',algorithms=["HS256"])
+            payload=jwt.decode(token, SECRET_KEY,algorithms=["HS256"])
             print(payload)
         except jwt.ExpiredSignatureError:
             return Response(
@@ -268,68 +316,69 @@ class Les_annonces_emploi(APIView):
         lm = []
         for i in languesm:
             lm.append(i.langue.nom)
-        key=""
-        for i in lm:
-            key=key+" "+i
-        
-        browser=webdriver.Chrome("chromedriver.exe")    
-        browser.get("https://www.linkedin.com/jobs/search?keywords="+key+"&position=1&pageNum=0")
-        # browser.get("https://www.linkedin.com/jobs/search?keywords=springboot&location=usa&position=1&pageNum=0")
-        jobs_titres=browser.find_elements_by_class_name("base-search-card__title")
-        tt=[] 
-        iterator = islice(jobs_titres, 25)
-        for i in iterator:
-            tt.append(i.text)
-        
-        jobs_entreprises=browser.find_elements_by_class_name("base-search-card__subtitle")
-        ne=[] 
-        iterator = islice(jobs_entreprises, 25)
-        for i in iterator:
-            ne.append(i.text)
-        jobs_adresses=browser.find_elements_by_class_name("job-search-card__location")
-        ja=[]
-        iterator = islice(jobs_adresses, 25)
-        for i in iterator:
-            ja.append(i.text)
-        jobs_date=browser.find_elements_by_tag_name("time")
-        # jobs_date=browser.find_elements_by_class_name("job-search-card__listdate--new job-search-card__listdate")
-        jd=[]  
-        iterator = islice(jobs_date, 25)
-        for i in iterator:
-            jd.append(i.text)
-            
-        jobs_links = browser.find_elements_by_tag_name('a')
-        jl= [elem.get_attribute('href') for elem in jobs_links]
-        iterator = islice(jl, 25)
-        for elem in iterator:
-            jl.append(elem)
-        
-        images = browser.find_elements_by_tag_name('img')
-        ji=[]
-        iterator = islice(images, 25)
-        for elem in iterator:
-            ji.append(elem.get_attribute('src'))
-        
-        
-        jobss=[ne,tt,ja,jd,jl,ji]
-        listjobs=[]
-        for item in range(0,len(jobss[3])):
-            singlejob={
-                "entreprise":jobss[0][item],
-                "titre":jobss[1][item],
-                "adresse":jobss[2][item],
-                "date":jobss[3][item],
-                "link":jobss[4][item],
-                "image":jobss[5][item]
-            }
-            
-            listjobs.append(singlejob)
-        time.sleep(5)
-        browser.close() 
+        travail = Travail.objects.all()
+        random_order = travail.order_by(Random())
+        seri = TravailSerializer(random_order, many=True)
         return Response(
-            listjobs,
+                seri.data,
             status=status.HTTP_200_OK
         )
+
+
+
+class recommended(APIView):
+    def get(self, request): 
+        data= request.headers['Authorization']
+        token=str.replace(str(data),'JWT ', '')
+        if not token:
+            return Response(
+                {
+                    'message':'Connexion majatni jaye',
+                },
+                status=status.HTTP_200_OK
+            )
+        try:
+            payload=jwt.decode(token, SECRET_KEY,algorithms=["HS256"])
+            print(payload)
+        except jwt.ExpiredSignatureError:
+            return Response(
+                {
+                    'message':'ExpiredSignatureError',
+                },
+                status=status.HTTP_200_OK
+            )
+
+        user=User.objects.filter(id=payload['user_id']).first()
+        c= C_emploi.objects.filter(user=user).first()
+        languesm = LangueMaitrise.objects.filter(c_emploi=c)
+        print(languesm)
+        lm = []
+        for i in languesm:
+            lm.append(i.langue.nom)
+            print(i.langue.nom)
+        try:
+            q_list = [Q(titre__icontains=string) for string in lm]
+            query = q_list.pop()
+            for q in q_list:
+                query |= q
+            travails = Travail.objects.filter(query)
+
+            random_order = travails.order_by(Random())[:7]
+        except:
+            travail = Travail.objects.all()[:7]
+            random_order = travail.order_by(Random())
+            seri = TravailSerializer(random_order, many=True)
+            return Response(
+                    seri.data,
+                status=status.HTTP_200_OK
+            )
+        
+        seri = TravailSerializer(random_order, many=True)
+        return Response(
+                seri.data,
+            status=status.HTTP_200_OK
+        )
+
 
 @api_view(['POST'])
 def inscription_chercheur_emploi(request):
@@ -436,363 +485,18 @@ class DetailLangueMaitrise(generics.RetrieveUpdateDestroyAPIView):
     queryset=LangueMaitrise.objects.all()
     serializer_class = LangueMaitriseSerializer
 
+@permission_classes([AllowAny])
+class ListDocument(generics.ListCreateAPIView):    
+
+    queryset=Document.objects.all()
+    serializer_class = DocumentSerializer
+
+@permission_classes([AllowAny])
+class DetailDocument(generics.RetrieveUpdateDestroyAPIView):
+    queryset=Document.objects.all()
+    serializer_class = DocumentSerializer
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# def page_home_entreprise(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_entreprise")
-#     entreprise = Entreprise.objects.get(user=request.user)
-#     if request.method=="POST":   
-#         email = request.POST['email']
-#         first_name=request.POST['first_name']
-#         last_name=request.POST['last_name']
-#         telephone = request.POST['telephone']
-#         sexe = request.POST['sexe']
-
-#         entreprise.user.email = email
-#         entreprise.user.first_name = first_name
-#         entreprise.user.last_name = last_name
-#         entreprise.phone = telephone
-#         entreprise.gender = sexe
-#         entreprise.save()
-#         entreprise.user.save()
-
-#         try:
-#             image = request.FILES['image']
-#             entreprise.image = image
-#             entreprise.save()
-#         except:
-#             pass
-#         alert = True
-#         return render(request, "page_home_entreprise.html", {'alert':alert})
-#     return render(request, "page_home_entreprise.html", {'entreprise':entreprise})
-
-# def publier_annonce(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_entreprise")
-#     if request.method == "POST":
-#         titre = request.POST['titre']
-#         date_debut = request.POST['date_debut']
-#         date_fin = request.POST['date_fin']
-#         salaire = request.POST['salaire']
-#         experience = request.POST['experience']
-#         adresse = request.POST['adresse']
-#         skills = request.POST['skills']
-#         description = request.POST['description']
-#         user = request.user
-#         entreprise = Entreprise.objects.get(user=user)
-#         travail = Travail.objects.create(entreprise=entreprise, titre=titre,date_debut=date_debut, date_fin=date_fin, salaire=salaire, image=entreprise.image, experience=experience, adresse=adresse, skills=skills, description=description, date_creation=date.today())
-#         travail.save()
-#         alert = True
-#         return render(request, "publier_annonce.html", {'alert':alert})
-#     return render(request, "publier_annonce.html")
-
-# def liste_des_annonces(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_entreprise")
-#     entreprises = Entreprise.objects.get(user=request.user)
-#     travails = Travail.objects.filter(entreprise=entreprises)
-#     return render(request, "liste_des_annonces.html", {'travails':travails})
-
-# def modifier_annonce(request, myid):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_entreprise")
-#     travail = Travail.objects.get(id=myid)
-#     if request.method == "POST":
-#         title = request.POST['titre']
-#         start_date = request.POST['date_debut']
-#         end_date = request.POST['date_fin']
-#         salary = request.POST['salaire']
-#         experience = request.POST['experience']
-#         location = request.POST['adresse']
-#         skills = request.POST['skills']
-#         description = request.POST['description']
-
-#         travail.titre = title
-#         travail.salaire = salary
-#         travail.experience = experience
-#         travail.adresse = location
-#         travail.skills = skills
-#         travail.description = description
-
-#         travail.save()
-#         if start_date:
-#             travail.date_debut = start_date
-#             travail.save()
-#         if end_date:
-#             travail.date_fin = end_date
-#             travail.save()
-#         alert = True
-#         return render(request, "modifier_annonce.html", {'alert':alert})
-#     return render(request, "modifier_annonce.html", {'travail':travail})
-
-# def logo_entreprise(request, myid):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_entreprise")
-#     travail = Travail.objects.get(id=myid)
-#     if request.method == "POST":
-#         image = request.FILES['logo']
-#         travail.image = image 
-#         travail.save()
-#         alert = True
-#         return render(request, "logo_entreprise.html", {'alert':alert})
-#     return render(request, "logo_entreprise.html", {'travail':travail})
-
-# def deconnecter(request):
-#     logout(request)
-#     return redirect('/')
-
-# def connexion_administrateur(request):
-#     if request.method == "POST":
-#         username = request.POST['username']
-#         password = request.POST['password']
-#         user = authenticate(username=username, password=password)
-#         if user is not None:
-#             if user.is_superuser:
-#                 login(request, user)
-#                 return redirect("/stat")
-#         else:   
-#             msg = "Les données sont  erronés,ressayer"
-#             return render(request, "connexion_administrateur.html", {"msg":msg})
-#     return render(request, "connexion_administrateur.html")
-
-
-# def rien(request):
-    
-#     return render(request, "cnx_admin.html")
-# def liste_chercheurs_emploi(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     c_emploi = C_emploi.objects.all()
-#     return render(request, "liste_chercheurs_emploi.html", {'c_emploi':c_emploi})
-
-# def supprimer_un_chercheur_emploi(request, myid):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     c_emploi = User.objects.filter(id=myid)
-#     c_emploi.delete()
-#     return redirect("/liste_chercheurs_emploi")
-
-# def entreprises_non_confirmer(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     entreprises = Entreprise.objects.filter(status="non_confirmer")
-#     return render(request, "entreprises_non_confirmer.html", {'entreprises':entreprises})
-
-# def change_status(request, myid):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     entreprise = Entreprise.objects.get(id=myid)
-#     if request.method == "POST":
-#         status = request.POST['status']
-#         entreprise.status=status
-#         entreprise.save()
-#         alert = True
-#         return render(request, "change_status.html", {'alert':alert})
-#     return render(request, "change_status.html", {'entreprise':entreprise})
-
-# def entreprises_confirmer(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     entreprises = Entreprise.objects.filter(status="Accepted")
-#     return render(request, "entreprises_confirmer.html", {'entreprises':entreprises})
-
-# def entreprises_rejeter(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     entreprises = Entreprise.objects.filter(status="Rejected")
-#     return render(request, "entreprises_rejeter.html", {'entreprises':entreprises})
-
-# def tous_les_entreprises(request):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     entreprises = Entreprise.objects.all()
-#     return render(request, "tous_les_entreprises.html", {'entreprises':entreprises})
-
-# def supprimer_entreprise(request, myid):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_administrateur")
-#     entreprise = User.objects.filter(id=myid)
-#     entreprise.delete()
-#     return redirect("/tous_les_entreprises")
-
-
-# def freelancerHomePage(request):
-#     if request.method == "POST":
-#         mot = request.POST['motcle']
-#         c_emplois = C_emploi.objects.filter(description__contains=mot)
-#         return render(request, "freelancer/freelancer.html", {'c_emplois':c_emplois})
-    
-#     c_emplois = C_emploi.objects.all()
-#     #     serializer = C_emploiSerializer(c_emplois, many=True), 
-#     #     return Response(serializer.data)
-    
-#     return render(request, "freelancer/freelancer.html", {'c_emplois':c_emplois})
-
-
-# def languesmaitrise(request):
-#     if request.method == "POST":
-#         langueid = request.POST['idid']
-#         c_emploi = C_emploi.objects.get(user=request.user)
-#         langue = Langue.objects.get(id=langueid)
-#         id = c_emploi.user_id
-        
-#         lm = LangueMaitrise.objects.create(c_emploi=c_emploi, langue=langue)
-#         lm.save()
-        
-#     c_emploi = C_emploi.objects.get(user=request.user)
-#     # id = c_emploi.user_id
-#     langues = LangueMaitrise.objects.filter(c_emploi=c_emploi)
-#     lang = Langue.objects.all()
-#     return render(request, "languesmaitrise.html", {'langues':langues, 'lang':lang})
-
-# def detailfreelancer(request, id):
-#     c_emploi = C_emploi.objects.get(id=id)
-#     iddd = c_emploi.user_id
-#     lm = LangueMaitrise.objects.filter(c_emploi_id=iddd)
-#     k = C_emploi.objects.get(id=id)
-#     return render(request, "freelancer/detailfreelancer.html", {'k':k, 'lm':lm})
-
-
-# @api_view(['GET','POST'])
-# def rest(request):
-#     if request.method == 'GET':
-#         c = Langue.objects.all()
-#         serializer = LangueSerializer(c, many=True)
-#         return Response(serializer.data)
-
-#     elif request.method == 'POST':
-#         try:
-#             n = request.data["nom"]
-#             d = request.data["description"]
-#             lang = Langue.objects.create(nom=n, description=d)
-#             return Response(
-#             "success",
-#             status=status.HTTP_201_CREATED
-#         )
-#         except:
-#             return Response(
-#                 "error, invalid data",
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-            
-# def scrapp(request):
-    
-#     list=[[1,2,3],["med","sidi","ali"],["brk","psidi","pali"]]
-#     listjobs=[]
-#     for item in range(0,len(list[0])):
-#         singlejob=[]
-#         singlejob.append(list[0][item])
-#         singlejob.append(list[1][item])
-#         singlejob.append(list[2][item])
-#         listjobs.append(singlejob)
-        
-#     return render(request, "jobscrapped.html",{'listjobs':listjobs})
-
-# def index(request):
-#     return render(request, "index.html")
-
-# def stat(request):
-#     t = Travail.objects.count()
-#     e = Entreprise.objects.count()
-#     c = C_emploi.objects.count()
-#     return render(request, "statistiques.html", {'t':t, 'e':e, 'c':c})
-
-# def connexion_chercheur_emploi(request): 
-#     if request.user.is_authenticated:
-#         return redirect("/page_home_chercheur_emploi")
-#     else:
-#         if request.method == "POST":
-#             username = request.POST['username']
-#             password = request.POST['password']
-#             user = authenticate(username=username, password=password)
-
-#             if user is not None:
-#                 user1 = C_emploi.objects.get(user=user)
-#                 if user1.type == "c_emploi":
-#                     login(request, user)
-#                     return redirect("/page_home_chercheur_emploi")
-#             else:   
-#                 msg = "Les données sont  erronés, ressayer"
-#                 return render(request, "connexion_chercheur_emploi.html", {"msg":msg})
-#     return render(request, "connexion_chercheur_emploi.html")
-
-# def page_home_chercheur_emploi(request):
-#     if not request.user.is_authenticated:
-#         return redirect('/connexion_chercheur_emploi/')
-#     c_emploi = C_emploi.objects.get(user=request.user)
-#     if request.method=="POST":   
-#         email = request.POST['email']
-#         first_name=request.POST['first_name']
-#         last_name=request.POST['last_name']
-#         telephone = request.POST['telephone']
-#         sexe = request.POST['sexe']
-#         description = request.POST['description']
-
-#         c_emploi.user.email = email
-#         c_emploi.user.first_name = first_name
-#         c_emploi.user.last_name = last_name
-#         c_emploi.phone = telephone
-#         c_emploi.sexe = sexe
-#         c_emploi.description = description
-        
-#         c_emploi.save()
-#         c_emploi.user.save()
-#         try:
-#             image = request.FILES['image']
-#             c_emploi.image = image
-#             c_emploi.save()
-#         except:
-#             pass
-#         alert = True
-#         return render(request, "page_home_chercheur_emploi.html", {'alert':alert})
-#     return render(request, "page_home_chercheur_emploi.html", {'c_emploi':c_emploi})
-
-
-# def detail_annonce(request, myid):
-#     travail = Travail.objects.get(id=myid)
-#     return render(request, "detail_annonce.html", {'travail':travail})
-
-# def deposer_pour_emploi(request, myid):
-#     if not request.user.is_authenticated:
-#         return redirect("/connexion_chercheur_emploi")
-#     c_emploi = C_emploi.objects.get(user=request.user)
-#     travail = Travail.objects.get(id=myid)
-#     date1 = date.today()
-#     if travail.date_fin < date1:
-#         closed=True
-#         return render(request, "deposer_pour_emploi.html", {'closed':closed})
-#     elif travail.date_debut > date1:
-#         notopen=True
-#         return render(request, "deposer_pour_emploi.html", {'notopen':notopen})
-#     else:
-#         if request.method == "POST":
-#             cv = request.FILES['cv']
-#             Deposer.objects.create(travail=travail, entreprise=travail.entreprise, c_emploi=c_emploi, cv=cv, date_depot=date.today())
-#             alert=True
-#             return render(request, "deposer_pour_emploi.html", {'alert':alert})
-#     return render(request, "deposer_pour_emploi.html", {'travail':travail})
-
-
-# def les_interesses(request):
-#     entreprise = Entreprise.objects.get(user=request.user)
-#     deposer = Deposer.objects.filter(entreprise=entreprise)
-#     return render(request, "les_interesses.html", {'deposer':deposer})

@@ -198,3 +198,7 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=55),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
+
+
+
+PublicKEYAES= "W/rj5xOutNQhR97OSBDJFpA4Eq9yKV4Lh8W2Q28wTZg="

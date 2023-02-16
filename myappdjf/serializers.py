@@ -11,6 +11,7 @@ class EntrepriseSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class TravailSerializer(serializers.ModelSerializer):
+    # "2023-02-14T18:51:49.671335Z"
     class Meta:
         model = Travail
         fields = '__all__'
@@ -41,6 +42,11 @@ class LangueMaitriseSerializer(serializers.ModelSerializer):
     class Meta:
         model = LangueMaitrise
         fields=['lang']
+
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields='__all__'
 
 
 class C_emploiSerializer(serializers.ModelSerializer):

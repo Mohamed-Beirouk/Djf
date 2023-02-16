@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 class C_emploi(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -28,18 +29,12 @@ class Entreprise(models.Model):
         return self.user.username
 
 class Travail(models.Model):
-    entreprise = models.ForeignKey(Entreprise, on_delete=models.CASCADE)
-    date_debut = models.DateField()
-    date_fin = models.DateField()
-    titre = models.CharField(max_length=200)
-    salaire = models.FloatField()
-    image = models.ImageField(upload_to="")
-    description = models.TextField(max_length=400)
-    experience = models.CharField(max_length=100)
-    adresse = models.CharField(max_length=100)
-    skills = models.CharField(max_length=200)
-    date_creation = models.DateField()
-
+    entreprise = models.CharField(max_length=50, default="")
+    titre = models.CharField(max_length=200, default="")
+    adresse = models.CharField(max_length=100, default="")
+    date = models.CharField(max_length=30, default="")
+    image = models.CharField(max_length=300, default="")
+    link = models.CharField(max_length=300, default="")
     def __str__ (self):
         return self.titre
 
@@ -52,6 +47,16 @@ class Deposer(models.Model):
 
     def __str__ (self):
         return str(self.c_emploi)
+
+class Document(models.Model):
+    intitule = models.CharField(max_length=20)
+    c_emploi = models.ForeignKey(C_emploi, on_delete=models.CASCADE)
+    cv = models.FileField(upload_to="") 
+    date_depot = models.DateTimeField(auto_now_add=True)
+
+    def __str__ (self):
+        return str(self.c_emploi)
+
 
 
 class Visiteur(models.Model):
@@ -69,14 +74,12 @@ class Notes(models.Model):
         return self.c_emploi
 
 class Langue(models.Model):
-    nom = models.CharField(max_length=100, default="", editable=False)
-    description = models.TextField(max_length=400, default="", editable=False)
-    
+    nom = models.CharField(max_length=100, default="")
+    description = models.TextField(max_length=400, default="")
     def __str__ (self):
         return self.nom
 class LangueMaitrise(models.Model):
     c_emploi = models.ForeignKey(C_emploi, on_delete=models.CASCADE, related_name="chercheur")
     langue = models.ForeignKey(Langue, default="",on_delete=models.CASCADE)
-    
     def __str__ (self):
         return self.langue.nom +" "+self.c_emploi.user.first_name

@@ -7,7 +7,7 @@ from .models import *
 
 admin.site.register(C_emploi)
 admin.site.register(Entreprise)
-
+admin.site.register(Document)
 admin.site.register(Travail)
 admin.site.register(Langue)
 admin.site.register(Notes)
